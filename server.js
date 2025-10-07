@@ -6,6 +6,7 @@ const { cookieToJson } = require('./util/util');
 const { createRequest } = require('./util/request');
 const dotenv = require('dotenv');
 const cache = require('./util/apicache').middleware;
+const net = require('node:net');
 
 /**
  * @typedef {{
@@ -198,7 +199,60 @@ async function consturctServer(moduleDefs) {
  * @returns {Promise<import('express').Express & ExpressExtension>}
  */
 async function startService() {
-  const port = Number(process.env.PORT || '3000');
+  /**
+   * 检测端口是否可用
+   * @param {number} port 待检测的端口号
+   * @returns {Promise<boolean>} 如果端口可用返回 true，否则返回 false
+   */
+  function isPortAvailable(port) {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      server.unref();
+      server.once('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+          resolve(false);
+        } else {
+          resolve(false);
+        }
+      });
+      server.once('listening', () => {
+        server.close(() => {
+          resolve(true);
+        });
+      });
+      server.listen(port);
+    });
+  }
+
+  /**
+   * 获取可用的随机端口
+   * @param {number} minPort 最小端口号
+   * @param {number} maxPort 最大端口号
+   * @returns {Promise<number>} 可用的端口号
+   */
+  async function getAvailableRandomPort(minPort = 3000, maxPort = 65535) {
+    const maxAttempts = 100;
+    for (let i = 0; i < maxAttempts; i++) {
+      const port = Math.floor(Math.random() * (maxPort - minPort + 1)) + minPort;
+      if (await isPortAvailable(port)) {
+        return port;
+      }
+    }
+    throw new Error('无法找到可用的端口');
+  }
+
+  async function getPort() {
+    if (process.env.PORT) {
+      const port = Number(process.env.PORT);
+      if (await isPortAvailable(port)) {
+        return port;
+      }
+      throw new Error(`指定的端口 ${port} 不可用`);
+    }
+    return await getAvailableRandomPort();
+  }
+
+  const port = await getPort();
   const host = process.env.HOST || '';
 
   const app = await consturctServer();
